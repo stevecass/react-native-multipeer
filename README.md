@@ -23,22 +23,27 @@ All you need is to `require` the `react-native-multipeer` module and then you ca
 
 ```javascript
 var React = require('react-native');
+
 var {
-  AppRegistry,
-  ListView,
-  StyleSheet,
-  Text,
-  View,
-  TouchableHighlight
+    AppRegistry,
+    ListView,
+    StyleSheet,
+    Text,
+    View,
+    TouchableHighlight
 } = React;
+
 var MultipeerConnectivity = require('react-native-multipeer');
 
 function getStateFromSources() {
   var ds = new ListView.DataSource({rowHasChanged: (r1, r2) => r1 !== r2});
-    return {
-      dataSource: ds.cloneWithRows(MultipeerConnectivity.getAllPeers())
-    };
+  return {
+    dataSource: ds.cloneWithRows(MultipeerConnectivity.getAllPeers()),
+    connectionEvents: ds.cloneWithRows(connectionEvents)
+  };
 }
+
+var connectionEvents = [];
 
 var peerApp = React.createClass({
   getInitialState: function() {
@@ -47,43 +52,61 @@ var peerApp = React.createClass({
   componentDidMount() {
     MultipeerConnectivity.on('peerFound', this._onChange);
     MultipeerConnectivity.on('peerLost', this._onChange);
+    MultipeerConnectivity.on('peerDisconnected', this._onChange);
     MultipeerConnectivity.on('invite', ((event) => {
       // Automatically accept invitations
       MultipeerConnectivity.rsvp(event.invite.id, true);
     }).bind(this));
     MultipeerConnectivity.on('peerConnected', (event) => {
-      alert(event.peer.id + ' connected!');
+      connectionEvents.push(event.peer.id + ' connected!');
+      this._onChange();
+      MultipeerConnectivity.send([event.peer.id], {text: "Welcome"}, function(){ console.log(arguments); });
     });
+    MultipeerConnectivity.on('data', (event) => {
+      console.log('data event', event);
+      connectionEvents.push(event.sender.id + ' sent text ' + event.data.text);
+      this._onChange();
+    });
+
     MultipeerConnectivity.advertise('channel1', { name: 'User-' + Math.round(1e6 * Math.random()) });
     MultipeerConnectivity.browse('channel1');
   },
 
+  renderEvent(ev) {
+    return <View><Text>{ev}</Text></View>
+  },
+
   renderRow(peer) {
     return (
-      <TouchableHighlight onPress={this.invite.bind(this, peer)} style={styles.row}>
-        <View>
-          <Text>{peer.name}</Text>
-        </View>
-      </TouchableHighlight>
+        <TouchableHighlight onPress={this._invite.bind(this, peer)} style={styles.row}>
+          <View>
+            <Text>{peer.name}</Text>
+          </View>
+        </TouchableHighlight>
     );
   },
-  
+
   render: function() {
     return (
-      <View style={styles.container}>
-        <ListView
-          style={styles.peers}
-          dataSource={this.state.dataSource}
-          renderRow={this.renderRow}
-        />
-      </View>
+        <View style={styles.container}>
+          <ListView
+              style={styles.peers}
+              dataSource={this.state.dataSource}
+              renderRow={this.renderRow}
+          />
+          <ListView
+            style={styles.peers}
+            dataSource={this.state.connectionEvents}
+            renderRow={this.renderEvent}
+          />
+        </View>
     );
   },
-  
+
   _invite(peer) {
     MultipeerConnectivity.invite(peer.id);
   },
-  
+
   _onChange() {
     this.setState(getStateFromSources());
   }
@@ -92,6 +115,7 @@ var peerApp = React.createClass({
 
 var styles = StyleSheet.create({
   container: {
+    borderTopWidth: 20,
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
